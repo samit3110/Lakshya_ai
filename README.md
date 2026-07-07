@@ -29,5 +29,8 @@ Designed specifically for institutional guides, parents, and visitor orientation
 
 ### 1. Repository Cloning
 ```bash
-git clone [https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git)
-cd YOUR_REPO_NAME
+git clone https://github.com/samit3110/Lakshya_ai.git
+cd Lakshya_ai
+mkdir templates
+#move index file into templates
+
