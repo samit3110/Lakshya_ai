@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Jarvis Interface - Live Call</title>
+    <style>
+        body { 
+            background-color: #050914; color: #00e5ff; font-family: 'Courier New', Courier, monospace; 
+            margin: 0; overflow: hidden; display: flex; height: 100vh; user-select: none;
+        }
+        
+        /* Left Side - Hologram */
+        .hologram-container { 
+            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;
+        }
+        .header { position: absolute; top: 30px; left: 40px; color: #d49a26; letter-spacing: 8px; font-size: 14px; font-weight: bold; }
+        #jarvisCanvas { width: 500px; height: 500px; filter: drop-shadow(0 0 15px rgba(0, 229, 255, 0.5)); }
+        #statusText { letter-spacing: 6px; font-size: 18px; font-weight: bold; margin-top: 20px; text-shadow: 0 0 10px #00e5ff; transition: color 0.3s; }
+        .status-error { color: #ff3333 !important; text-shadow: 0 0 10px #ff3333 !important; }
+        #controlBtn { 
+            margin-top: 40px; padding: 12px 30px; background: transparent; border: 1px solid #00e5ff; 
+            color: #00e5ff; font-family: 'Courier New', monospace; font-size: 16px; letter-spacing: 4px;
+            cursor: pointer; box-shadow: 0 0 10px inset rgba(0,229,255,0.3); transition: 0.3s; z-index: 10;
+        }
+        #controlBtn:hover { background: rgba(0, 229, 255, 0.1); box-shadow: 0 0 20px inset rgba(0,229,255,0.6); }
+
+        /* Right Side - Chat Box & Input UI */
+        .chat-container {
+            width: 450px; background: rgba(0, 15, 30, 0.9); border-left: 2px solid rgba(0, 229, 255, 0.3);
+            display: flex; flex-direction: column; padding: 20px; box-sizing: border-box;
+            box-shadow: -10px 0 20px rgba(0,0,0,0.5);
+        }
+        .chat-header {
+            color: #d49a26; font-size: 14px; letter-spacing: 4px; margin-bottom: 20px; border-bottom: 1px solid rgba(212, 154, 38, 0.3); padding-bottom: 10px; font-weight: bold; text-align: center;
+        }
+        #chatLog { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; padding-right: 10px; margin-bottom: 15px; }
+        #chatLog::-webkit-scrollbar { width: 5px; }
+        #chatLog::-webkit-scrollbar-thumb { background: #00e5ff; border-radius: 5px; }
+        
+        .msg-box { font-size: 13px; line-height: 1.5; padding: 12px 16px; border-radius: 8px; max-width: 85%; white-space: pre-line; }
+        .msg-user { align-self: flex-end; background: rgba(0, 229, 255, 0.1); border: 1px solid rgba(0, 229, 255, 0.3); color: #fff; text-align: right; }
+        .msg-ai { align-self: flex-start; background: rgba(0, 255, 100, 0.05); border: 1px solid rgba(0, 255, 100, 0.25); color: #a4ffc4; }
+        .msg-system { align-self: center; background: rgba(255, 50, 50, 0.1); border: 1px solid rgba(255, 50, 50, 0.3); color: #ff3333; text-align: center; font-size: 12px; }
+        .msg-label { font-size: 10px; opacity: 0.7; margin-bottom: 4px; letter-spacing: 1px; font-weight: bold; }
+
+        /* Integrated Text Input Bar styling */
+        .input-bar-container {
+            display: flex; gap: 10px; border-top: 1px solid rgba(0, 229, 255, 0.2); padding-top: 15px;
+        }
+        #textInput {
+            flex: 1; background: rgba(5, 9, 20, 0.8); border: 1px solid rgba(0, 229, 255, 0.4);
+            color: #00e5ff; font-family: 'Courier New', monospace; font-size: 14px; padding: 10px;
+            border-radius: 4px; outline: none; box-shadow: 0 0 5px inset rgba(0,229,255,0.1);
+        }
+        #textInput:focus { border-color: #00e5ff; box-shadow: 0 0 8px rgba(0,229,255,0.3); }
+        #sendBtn {
+            background: transparent; border: 1px solid #00e5ff; color: #00e5ff;
+            font-family: 'Courier New', monospace; font-size: 12px; padding: 0 15px;
+            cursor: pointer; border-radius: 4px; letter-spacing: 1px; transition: 0.3s;
+        }
+        #sendBtn:hover { background: rgba(0, 229, 255, 0.15); box-shadow: 0 0 10px rgba(0,229,255,0.4); }
+    </style>
+</head>
+<body>
+
+    <div class="hologram-container">
+        <div class="header">M I S S I O N &nbsp; C O N T R O L</div>
+        <canvas id="jarvisCanvas" width="500" height="500"></canvas>
+        <div id="statusText">S T A N D B Y</div>
+        <button id="controlBtn" onclick="toggleCall()">INITIATE CALL</button>
+    </div>
+
+    <div class="chat-container">
+        <div class="chat-header">L I V E &nbsp; T R A N S C R I P T</div>
+        <div id="chatLog">
+            </div>
+        
+        <div class="input-bar-container">
+            <input type="text" id="textInput" placeholder="Ask about our laboratories, sir..." autocomplete="off">
+            <button id="sendBtn" onclick="sendTextMessage()">SEND</button>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. JARVIS 3D HOLOGRAM ANIMATION ---
+        const canvas = document.getElementById('jarvisCanvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+        let currentState = 'standby';
+        let rotationAngle = 0;
+        
+        let playbackCtx;
+        let playbackAnalyser;
+        
+        // Global Audio Object Tracker to prevent overlaps
+        let currentJarvisAudio = null;
+
+        for(let i=0; i<120; i++) {
+            let theta = Math.random() * 2 * Math.PI;
+            let phi = Math.acos((Math.random() * 2) - 1);
+            let r = 160; 
+            particles.push({ x3d: r * Math.sin(phi) * Math.cos(theta), y3d: r * Math.sin(phi) * Math.sin(theta), z3d: r * Math.cos(phi) });
+        }
+
+        function drawHologram() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let speed = 0.005; let nodeColor = 'rgba(0, 229, 255, 0.8)'; let lineColor = 'rgba(0, 229, 255, 0.15)';
+            let dynamicScaleMultiplier = 1; 
+
+            if (currentState === 'listening') { 
+                speed = 0.03; nodeColor = 'rgba(255, 50, 50, 0.9)'; lineColor = 'rgba(255, 50, 50, 0.3)'; 
+            } else if (currentState === 'processing') { 
+                speed = 0.08; nodeColor = 'rgba(255, 200, 0, 0.9)'; lineColor = 'rgba(255, 200, 0, 0.2)'; 
+            } else if (currentState === 'speaking') { 
+                speed = 0.015; nodeColor = 'rgba(0, 255, 100, 0.9)'; lineColor = 'rgba(0, 255, 100, 0.4)'; 
+                
+                if (playbackAnalyser) {
+                    const dataArray = new Uint8Array(playbackAnalyser.frequencyBinCount);
+                    playbackAnalyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) { sum += dataArray[i]; }
+                    let averageVolume = sum / dataArray.length; 
+                    dynamicScaleMultiplier = 1 + (averageVolume / 255) * 0.6;
+                }
+            } else if (currentState === 'error') {
+                speed = 0.002; nodeColor = 'rgba(255, 50, 50, 0.8)'; lineColor = 'rgba(255, 50, 50, 0.1)';
+            }
+
+            rotationAngle += speed;
+            let projectedPoints = [];
+
+            particles.forEach(p => {
+                let scaledX = p.x3d * dynamicScaleMultiplier;
+                let scaledY = p.y3d * dynamicScaleMultiplier;
+                let scaledZ = p.z3d * dynamicScaleMultiplier;
+
+                let x = scaledX * Math.cos(rotationAngle) - scaledZ * Math.sin(rotationAngle);
+                let z = scaledX * Math.sin(rotationAngle) + scaledZ * Math.cos(rotationAngle);
+                let y = scaledY;
+                
+                let scale = 300 / (300 + z);
+                let px = (canvas.width / 2) + (x * scale);
+                let py = (canvas.height / 2) + (y * scale);
+                
+                projectedPoints.push({x: px, y: py, z: z, scale: scale});
+                ctx.beginPath(); ctx.arc(px, py, 2 * scale, 0, Math.PI * 2); ctx.fillStyle = nodeColor; ctx.fill();
+            });
+
+            ctx.lineWidth = 1.5; ctx.strokeStyle = lineColor;
+            for(let i=0; i<projectedPoints.length; i++) {
+                for(let j=i+1; j<projectedPoints.length; j++) {
+                    if(Math.hypot(projectedPoints[i].x - projectedPoints[j].x, projectedPoints[i].y - projectedPoints[j].y) < (45 * dynamicScaleMultiplier)) {
+                        ctx.beginPath(); ctx.moveTo(projectedPoints[i].x, projectedPoints[i].y); ctx.lineTo(projectedPoints[j].x, projectedPoints[j].y); ctx.stroke();
+                    }
+                }
+            }
+            requestAnimationFrame(drawHologram);
+        }
+        drawHologram();
+
+        // --- 2. LOGIC OPERATIONS (VOICE & TEXT) ---
+        let isCallActive = false;
+        let micStream;
+        let mediaRecorder;
+        let audioChunks = [];
+        
+        let micAudioContext;
+        let micAnalyser;
+        let silenceTimer = null;
+        let hasSpoken = false; 
+        
+        const SILENCE_LIMIT_MS = 1000; 
+        const VOLUME_THRESHOLD = 15; 
+
+        document.getElementById("textInput").addEventListener("keydown", function(event) {
+            if (event.key === "Enter") {
+                sendTextMessage();
+            }
+        });
+
+        function updateUI(state, text) {
+            currentState = state;
+            const element = document.getElementById('statusText');
+            element.innerText = text.split('').join(' ');
+            if (state === 'error') {
+                element.classList.add('status-error');
+            } else {
+                element.classList.remove('status-error');
+            }
+        }
+
+        function appendToChat(sender, text) {
+            const chatLog = document.getElementById('chatLog');
+            const msgDiv = document.createElement("div");
+            
+            if (sender === "You") {
+                msgDiv.className = "msg-box msg-user";
+                msgDiv.innerHTML = `<div class="msg-label">YOU</div><div>${text}</div>`;
+            } else if (sender === "Jarvis") {
+                msgDiv.className = "msg-box msg-ai";
+                msgDiv.innerHTML = `<div class="msg-label">JARVIS</div><div>${text}</div>`;
+            } else {
+                msgDiv.className = "msg-box msg-system";
+                msgDiv.innerHTML = `<div>${text}</div>`;
+            }
+            
+            chatLog.appendChild(msgDiv);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        async function initAudioContext() {
+            if (!playbackCtx) {
+                playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+                playbackAnalyser = playbackCtx.createAnalyser();
+                playbackAnalyser.fftSize = 256;
+                playbackAnalyser.connect(playbackCtx.destination);
+            }
+            if (playbackCtx.state === 'suspended') {
+                await playbackCtx.resume();
+            }
+        }
+
+        // Stops any active audio immediately to prevent overlaps
+        function stopCurrentAudio() {
+            if (currentJarvisAudio) {
+                currentJarvisAudio.pause();
+                currentJarvisAudio.currentTime = 0;
+                currentJarvisAudio = null;
+            }
+        }
+
+        async function sendTextMessage() {
+            const inputElement = document.getElementById("textInput");
+            const textMessage = inputElement.value.trim();
+            if (!textMessage) return;
+
+            inputElement.value = "";
+            
+            // TERMINATE previous response speech immediately when sending a new message
+            stopCurrentAudio();
+            await initAudioContext();
+            
+            if (isCallActive && mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+
+            updateUI('processing', 'P R O C E S S I N G');
+
+            try {
+                const response = await fetch("/api/text-chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text: textMessage })
+                });
+
+                if (!response.ok) throw new Error(`HTTP Error Status ${response.status}`);
+                const data = await response.json();
+
+                if (data.error) throw new Error(data.details || data.error);
+
+                appendToChat("You", data.user_text);
+                
+                const parsedContent = data.ai_text ? data.ai_text.trim() : "Displaying text matrix updates.";
+                appendToChat("Jarvis", parsedContent);
+
+                if (data.audio_base64) {
+                    playAIResponse(data.audio_base64);
+                } else {
+                    if (isCallActive) startListeningCycle();
+                    else updateUI('standby', 'S T A N D B Y');
+                }
+            } catch (e) {
+                console.error(e);
+                updateUI('error', 'E R R O R');
+                appendToChat("System", `Text Error: ${e.message}`);
+                setTimeout(() => { 
+                    if (isCallActive) startListeningCycle(); 
+                    else updateUI('standby', 'S T A N D B Y');
+                }, 2500);
+            }
+        }
+
+        async function toggleCall() {
+            const btn = document.getElementById('controlBtn');
+            stopCurrentAudio();
+            await initAudioContext();
+            
+            if (!isCallActive) {
+                try {
+                    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(micStream);
+                    
+                    micAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    micAnalyser = micAudioContext.createAnalyser();
+                    micAnalyser.fftSize = 512;
+                    const source = micAudioContext.createMediaStreamSource(micStream);
+                    source.connect(micAnalyser);
+
+                    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+                    mediaRecorder.onstop = handleAudioSend;
+
+                    isCallActive = true;
+                    btn.innerText = "END CALL";
+                    btn.style.color = "#ff3333";
+                    btn.style.borderColor = "#ff3333";
+                    
+                    document.getElementById('chatLog').innerHTML = ""; 
+                    startListeningCycle();
+
+                } catch (err) {
+                    alert("Microphone access required.");
+                }
+            } else {
+                isCallActive = false;
+                if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+                if (micStream) micStream.getTracks().forEach(track => track.stop());
+                if (micAudioContext) micAudioContext.close();
+                
+                btn.innerText = "INITIATE CALL";
+                btn.style.color = "#00e5ff";
+                btn.style.borderColor = "#00e5ff";
+                updateUI('standby', 'S T A N D B Y');
+            }
+        }
+
+        function startListeningCycle() {
+            if (!isCallActive) return;
+            
+            audioChunks = [];
+            hasSpoken = false; 
+            if (silenceTimer) clearTimeout(silenceTimer);
+            
+            if (mediaRecorder.state !== 'recording') {
+                mediaRecorder.start();
+            }
+            
+            updateUI('listening', 'L I S T E N I N G . . .');
+            monitorSilence(); 
+        }
+
+        function monitorSilence() {
+            if (!isCallActive || mediaRecorder.state !== 'recording') return;
+
+            const dataArray = new Uint8Array(micAnalyser.frequencyBinCount);
+            micAnalyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) { sum += dataArray[i]; }
+            let averageVolume = sum / dataArray.length;
+
+            if (averageVolume > VOLUME_THRESHOLD) {
+                hasSpoken = true;
+                if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+            } else {
+                if (hasSpoken && !silenceTimer) {
+                    silenceTimer = setTimeout(() => {
+                        if (mediaRecorder.state === 'recording') mediaRecorder.stop();
+                    }, SILENCE_LIMIT_MS);
+                }
+            }
+            requestAnimationFrame(monitorSilence);
+        }
+
+        async function handleAudioSend() {
+            if (!isCallActive) return;
+            
+            if (!hasSpoken || audioChunks.length === 0) {
+                startListeningCycle();
+                return;
+            }
+
+            // Terminate voice output if user speaks over it
+            stopCurrentAudio();
+
+            updateUI('processing', 'P R O C E S S I N G');
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+            formData.append("audio", audioBlob, "user_voice.webm");
+
+            try {
+                const response = await fetch("/api/voice-chat", { method: "POST", body: formData });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP Error Status ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.details || data.error);
+                }
+
+                appendToChat("You", data.user_text ? data.user_text : "...");
+                appendToChat("Jarvis", data.ai_text ? data.ai_text : "I could not process that.");
+                
+                if (data.audio_base64 && isCallActive) {
+                    playAIResponse(data.audio_base64);
+                } else {
+                    startListeningCycle(); 
+                }
+            } catch (e) {
+                console.error("Network Failure Logic Exception:", e);
+                updateUI('error', 'E R R O R');
+                appendToChat("System", `Connection Issue: ${e.message}`);
+                setTimeout(() => { if(isCallActive) startListeningCycle(); }, 2500); 
+            }
+        }
+
+        function playAIResponse(base64Audio) {
+            // Stop any dangling stream track sessions before proceeding
+            stopCurrentAudio();
+
+            if (!base64Audio) {
+                if (isCallActive) startListeningCycle();
+                else updateUI('standby', 'S T A N D B Y');
+                return;
+            }
+
+            try {
+                const binaryString = window.atob(base64Audio);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                const blob = new Blob([bytes.buffer], { type: 'audio/mpeg' });
+                const audioUrl = URL.createObjectURL(blob);
+                
+                // Track globally
+                currentJarvisAudio = new Audio(audioUrl);
+                
+                updateUI('speaking', 'S P E A K I N G');
+                
+                currentJarvisAudio.onended = () => {
+                    URL.revokeObjectURL(audioUrl); 
+                    currentJarvisAudio = null;
+                    if (isCallActive) {
+                        startListeningCycle();
+                    } else {
+                        updateUI('standby', 'S T A N D B Y');
+                    }
+                };
+                
+                currentJarvisAudio.play().catch(err => {
+                    console.error("Autoplay context block:", err);
+                    currentJarvisAudio = null;
+                    if (isCallActive) startListeningCycle();
+                });
+            } catch (err) {
+                console.error("Audio Pipeline Error:", err);
+                currentJarvisAudio = null;
+                if (isCallActive) startListeningCycle();
+            }
+        }
+    </script>
+</body>
+</html>
