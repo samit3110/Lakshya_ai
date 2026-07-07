@@ -33,4 +33,5 @@ git clone https://github.com/samit3110/Lakshya_ai.git
 cd Lakshya_ai
 mkdir templates
 #move index file into templates
-
+pip install -r requirements.txt
+python app.py
